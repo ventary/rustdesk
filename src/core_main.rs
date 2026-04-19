@@ -79,6 +79,46 @@ pub fn core_main() -> Option<Vec<String>> {
         }
         i += 1;
     }
+    // Ventary: intercept ventary-remote://<token> URIs early. Resolve the
+    // single-use token via cloud.ventary.org -> {rustdeskId, password, ...}
+    // and rewrite args into the existing RustDesk flow (--connect <id> with
+    // password option prefilled).
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    if let Some(first) = args.first().cloned() {
+        const VENTARY_URI_PREFIX: &str = "ventary-remote://";
+        if first.starts_with(VENTARY_URI_PREFIX) {
+            let raw = first[VENTARY_URI_PREFIX.len()..].trim_matches('/');
+            let token = raw.split(['/', '?']).next().unwrap_or("").to_string();
+            if !token.is_empty() {
+                match ventary_resolve_token(&token) {
+                    Ok((id, password)) => {
+                        log::info!("Ventary token resolved to id={}", id);
+                        args.clear();
+                        args.push("--connect".to_string());
+                        args.push(id);
+                        // Sciter ui.rs:148 expects password as 3rd positional arg
+                        // (not as a --password flag). See src/ui.rs:137-148.
+                        args.push(password);
+                        #[cfg(feature = "flutter")]
+                        {
+                            _is_flutter_invoke_new_connection = true;
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Ventary token resolve failed: {}", e);
+                        #[cfg(windows)]
+                        crate::platform::message_box(&format!(
+                            "Verbindung abgelaufen oder ungültig.\n\nDetails: {}",
+                            e
+                        ));
+                        #[cfg(not(windows))]
+                        eprintln!("Verbindung abgelaufen oder ungültig: {}", e);
+                        return None;
+                    }
+                }
+            }
+        }
+    }
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     if args.is_empty() {
         #[cfg(target_os = "linux")]
@@ -847,4 +887,40 @@ fn is_root() -> bool {
 fn is_quick_support_exe(exe: &str) -> bool {
     let exe = exe.to_lowercase();
     exe.contains("-qs-") || exe.contains("-qs.exe") || exe.contains("_qs.exe")
+}
+
+/// Ventary: resolve a single-use token via cloud.ventary.org.
+///
+/// POST https://cloud.ventary.org/api/remote/resolve-token
+/// Body:     { "token": "<token>" }
+/// Response: { "rustdeskId": "<id>", "password": "<pw>", "relayServer": "..." }
+///
+/// The token is GETDEL on the server (single-use, 30s TTL). On success returns
+/// (rustdeskId, password). On any error (network, invalid token, expired) returns
+/// an Err with a human-readable message.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn ventary_resolve_token(token: &str) -> Result<(String, String), String> {
+    use std::time::Duration;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("http client: {}", e))?;
+    let body = serde_json::json!({ "token": token });
+    let resp = client
+        .post("https://cloud.ventary.org/api/remote/resolve-token")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("request failed: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("http {}", resp.status()));
+    }
+    let v: serde_json::Value = resp
+        .json()
+        .map_err(|e| format!("parse response: {}", e))?;
+    let id = v.get("rustdeskId").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let pw = v.get("password").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    if id.is_empty() || pw.is_empty() {
+        return Err("response missing id or password".to_string());
+    }
+    Ok((id, pw))
 }

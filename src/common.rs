@@ -940,13 +940,8 @@ pub fn is_modifier(evt: &KeyEvent) -> bool {
 }
 
 pub fn check_software_update() {
-    if is_custom_client() {
-        return;
-    }
-    let opt = LocalConfig::get_option(keys::OPTION_ENABLE_CHECK_UPDATE);
-    if config::option2bool(keys::OPTION_ENABLE_CHECK_UPDATE, &opt) {
-        std::thread::spawn(move || allow_err!(do_check_software_update()));
-    }
+    // Ventary: auto-update via api.rustdesk.com is disabled — enterprise build,
+    // updates are delivered via MSIX/MSI packaging from cloud.ventary.org.
 }
 
 // No need to check `danger_accept_invalid_cert` for now.
@@ -1012,7 +1007,10 @@ pub fn is_rustdesk() -> bool {
 
 #[inline]
 pub fn get_uri_prefix() -> String {
-    format!("{}://", get_app_name().to_lowercase())
+    // Ventary: hardcoded because APP_NAME contains spaces ("Ventary Remote Client")
+    // which would produce an invalid URI scheme. The scheme "ventary-remote://" is
+    // registered in the Inno Setup installer and emitted by the Admin-UI.
+    "ventary-remote://".to_string()
 }
 
 #[cfg(target_os = "macos")]

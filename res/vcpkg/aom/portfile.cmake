@@ -1,5 +1,7 @@
 # NASM is required to build AOM
-vcpkg_find_acquire_program(NASM)
+# Ventary pin: vcpkg default bundles NASM 3.01 which breaks aom_optimization.cmake
+# (multipass behaviour rejected). Force local NASM 2.16.03.
+set(NASM "C:/DEV/vcpkg/downloads/tools/nasm/nasm-2.16.03/nasm.exe")
 get_filename_component(NASM_EXE_PATH ${NASM} DIRECTORY)
 vcpkg_add_to_path(${NASM_EXE_PATH})
 
