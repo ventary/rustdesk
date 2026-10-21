@@ -80,7 +80,7 @@ pub fn core_main() -> Option<Vec<String>> {
         i += 1;
     }
     // Ventary: intercept ventary-remote://<token> URIs early. Resolve the
-    // single-use token via cloud.ventary.org -> {rustdeskId, password, ...}
+    // single-use token via control.ventary.org -> {rustdeskId, password, ...}
     // and rewrite args into the existing RustDesk flow (--connect <id> with
     // password option prefilled).
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -889,9 +889,12 @@ fn is_quick_support_exe(exe: &str) -> bool {
     exe.contains("-qs-") || exe.contains("-qs.exe") || exe.contains("_qs.exe")
 }
 
-/// Ventary: resolve a single-use token via cloud.ventary.org.
+/// Ventary: resolve a single-use token via control.ventary.org.
 ///
-/// POST https://cloud.ventary.org/api/remote/resolve-token
+/// control.ventary.org is the stable name; nginx there decides which cloud
+/// answers (V1 today, v2 later), so a cloud switch needs no client rollout.
+///
+/// POST https://control.ventary.org/api/remote/resolve-token
 /// Body:     { "token": "<token>" }
 /// Response: { "rustdeskId": "<id>", "password": "<pw>", "relayServer": "..." }
 ///
@@ -907,7 +910,7 @@ fn ventary_resolve_token(token: &str) -> Result<(String, String), String> {
         .map_err(|e| format!("http client: {}", e))?;
     let body = serde_json::json!({ "token": token });
     let resp = client
-        .post("https://cloud.ventary.org/api/remote/resolve-token")
+        .post("https://control.ventary.org/api/remote/resolve-token")
         .json(&body)
         .send()
         .map_err(|e| format!("request failed: {}", e))?;
